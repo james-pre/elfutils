@@ -18,5 +18,8 @@
 		"eslint": "^8.39.0",
 		"prettier": "^2.8.7",
 		"typescript": "^5.0.4"
+	},
+	"dependencies": {
+		"buffer": "^6.0.3"
 	}
 }
