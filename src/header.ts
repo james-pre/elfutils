@@ -1,36 +1,94 @@
 import { e_ident, e_type, e_machine, e_machine_strings, p_type, sh_type, EI_OSABI_STRINGS, sh_flags, st_type, st_bindings, st_visibility, p_flags, d_tag } from './constants';
-import { hasFlag, readString, arrayToTR } from './utils';
+import { readString, arrayToTR } from './utils';
 import { Buffer } from 'buffer';
 
+/**
+ * Options for encoding/decoding ELF headers from Buffers
+ */
 export interface EncodeDecodeOptions {
 	isLE: boolean;
 	is32bit: boolean;
 	elf?: ELF;
 }
 
-export interface ELFElement {
-	toString(): string;
-	toHTML(): HTMLElement;
-	toBuffer(options?: EncodeDecodeOptions): Buffer;
-}
-
-export interface ELFElementConstructor {
+/**
+ * Constructor type for ELF elements
+ */
+export type ELFElementConstructor<T extends ELFElement> = {
 	SH_TYPES: sh_type[];
-	FromBuffer(buffer: Buffer, options?: EncodeDecodeOptions): ELFElement;
+	FromBuffer(buffer: Buffer, options?: EncodeDecodeOptions): T;
 }
 
-export class ELFHeader implements ELFElement {
-	private constructor(private buffer: Buffer) {}
+/**
+ * Base clase for ELF elements
+ */
+export abstract class ELFElement {
 
-	private get view(): DataView {
+	constructor(
+		public buffer: Buffer,
+		public options?: EncodeDecodeOptions,
+	) {}
+
+	/**
+	 * Gets a DataView representing the current element's buffer
+	 */
+	protected get view(): DataView {
 		return new DataView(this.buffer);
 	}
 
+	/**
+	 * Whether the current element is little endian or big endian
+	 */
 	public get isLE(): boolean {
+		return this.options.isLE;
+	}
+
+	/**
+	 * Whether the current element is 32 bit
+	 */
+	public get is32bit(): boolean {
+		return this.options.is32bit;
+	}
+
+	/**
+	 * Get a string representation of the current element
+	 */
+	public abstract toString(): string;
+
+	/**
+	 * Get a HTML representation of the current element
+	 */
+	public abstract toHTML(): HTMLElement;
+
+	/**
+	 * Returns a buffer representing the current element
+	 * @param options 
+	 * @returns the encoded buffer
+	 */
+	public toBuffer(options?: EncodeDecodeOptions): Buffer {
+		return Buffer.from(this.buffer);
+	};
+
+	/**
+	 * The different section header types represented by this element type
+	 */
+	public static SH_TYPES: sh_type[];
+
+	public static FromBuffer(buffer: Buffer, options?: EncodeDecodeOptions): ELFElement {
+		throw new ReferenceError('Cannot call FromBuffer on ELFElement directly!');
+	};
+}
+
+export class ELFHeader extends ELFElement {
+	private constructor(buffer: Buffer) {
+		super(buffer);
+	}
+
+	public override get isLE(): boolean {
 		return this.ident[e_ident.DATA] == 1;
 	}
 
-	public get is32bit(): boolean {
+	public override get is32bit(): boolean {
 		return this.ident[e_ident.CLASS] == 1;
 	}
 
@@ -188,24 +246,14 @@ export class ELFHeader implements ELFElement {
 		return Buffer.from(this.buffer);
 	}
 
-	public static FromBuffer(buffer: Buffer): ELFHeader {
+	public static override FromBuffer(buffer: Buffer): ELFHeader {
 		return new ELFHeader(buffer);
 	}
 }
 
-export class ProgramHeader implements ELFElement {
-	public constructor(private buffer: Buffer, public options: EncodeDecodeOptions) {}
-
-	private get view(): DataView {
-		return new DataView(this.buffer);
-	}
-
-	public get isLE(): boolean {
-		return this.options.isLE;
-	}
-
-	public get is32bit(): boolean {
-		return this.options.is32bit;
+export class ProgramHeader extends ELFElement {
+	public constructor(buffer: Buffer, options: EncodeDecodeOptions) {
+		super(buffer, options);
 	}
 
 	public get type(): p_type {
@@ -280,6 +328,10 @@ export class ProgramHeader implements ELFElement {
 		val.copy(this.options.elf.buffer, Number(this.offset), 0, Number(this.filesz));
 	}
 
+	public hasFlag(flag: number | bigint): boolean {
+		return (Number(this.flags) & Number(flag)) == Number(flag);
+	}
+
 	public toString(): string {
 		return `\
 				Type: ${p_type[this.type] || '0x' + this.type.toString(16)}
@@ -289,8 +341,7 @@ export class ProgramHeader implements ELFElement {
 				File segment size: ${this.filesz} (bytes)
 				Memory segment size: ${this.memsz} (bytes)
 				Flags: ${Object.entries(p_flags)
-					.map(([text, num]) => (hasFlag(this.flags, Number(num)) ? text : ''))
-					.filter(flag => flag)
+					.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
 					.join(', ')}
 				Alignment: ${this.align}${this.type == p_type.INTERP ? `\n[Requesting interpreter: ${this.value.toString('utf8')}]` : ''}
 			`.replaceAll('\t', '');
@@ -305,39 +356,24 @@ export class ProgramHeader implements ELFElement {
 			this.filesz,
 			this.memsz,
 			Object.entries(p_flags)
-				.map(([text, num]) => (hasFlag(this.flags, Number(num)) ? text : ''))
-				.filter(flag => flag)
+				.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
 				.join(', '),
 			this.align,
 		]);
-	}
-
-	public toBuffer(): Buffer {
-		return Buffer.from(this.buffer);
 	}
 
 	public static GetHTMLNameRow(): HTMLTableRowElement {
 		return arrayToTR(['Type', 'Offset', 'Virtual Address', 'Physical Address', 'File size', 'Memory size', 'Flags', 'Alignment']);
 	}
 
-	public static FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): ProgramHeader {
+	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): ProgramHeader {
 		return new ProgramHeader(buffer, options);
 	}
 }
 
-export class SectionHeader implements ELFElement {
-	private constructor(private buffer: Buffer, public options: EncodeDecodeOptions) {}
-
-	private get view(): DataView {
-		return new DataView(this.buffer);
-	}
-
-	public get isLE(): boolean {
-		return this.options.isLE;
-	}
-
-	public get is32bit(): boolean {
-		return this.options.is32bit;
+export class SectionHeader extends ELFElement {
+	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
+		super(buffer, options);
 	}
 
 	public get name(): number {
@@ -384,20 +420,24 @@ export class SectionHeader implements ELFElement {
 		return this.options.elf.buffer.slice(Number(this.offset), Number(this.offset) + Number(this.size));
 	}
 
+	public hasFlag(flag: number | bigint): boolean {
+		return (Number(this.flags) & Number(flag)) == Number(flag);
+	}
+
 	public getName(): string {
 		return readString(this.options.elf.sectionHeaders[this.options.elf.header.shstrndx].value, this.name);
 	}
 
-	public getData(elf: ELF, t: ELFElementConstructor): ELFElement[] {
+	public getData<T extends ELFElement>(elfElement: ELFElementConstructor<T>): T[] {
 		const result = [], value = this.value;
 
-		if (!t.SH_TYPES.includes(this.type)) {
-			throw new TypeError(`Invalid type`);
+		if (!elfElement.SH_TYPES.includes(this.type)) {
+			throw new TypeError('Invalid type');
 		}
 
 		for (let i = 0; i < this.size; i += Number(this.entsize)) {
 			const entBuffer = value.slice(i, i + Number(this.entsize));
-			const ent = t.FromBuffer(entBuffer, this.options);
+			const ent = elfElement.FromBuffer(entBuffer, this.options);
 			result.push(ent);
 		}
 
@@ -411,8 +451,7 @@ export class SectionHeader implements ELFElement {
 				Type: ${sh_type[this.type] || '0x' + this.type.toString(16)}
 				Address: 0x${this.addr.toString(16)}
 				Flags: ${Object.entries(sh_flags)
-					.map(([text, num]) => (hasFlag(this.flags, Number(num)) ? text : ''))
-					.filter(flag => flag)
+					.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
 					.join(', ')}
 				Offset: ${this.offset} (bytes)
 				Size: ${this.size} (bytes)
@@ -430,8 +469,7 @@ export class SectionHeader implements ELFElement {
 			`${sh_type[this.type] || '0x' + this.type.toString(16)}`,
 			`0x${this.addr.toString(16)}`,
 			Object.entries(sh_flags)
-				.map(([text, num]) => (hasFlag(this.flags, Number(num)) ? text : ''))
-				.filter(flag => flag)
+				.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
 				.join(', '),
 			this.offset,
 			this.size,
@@ -442,32 +480,18 @@ export class SectionHeader implements ELFElement {
 		]);
 	}
 
-	public toBuffer(): Buffer {
-		return Buffer.from(this.buffer);
-	}
-
 	public static GetHTMLNameRow(): HTMLTableRowElement {
 		return arrayToTR(['No.', 'Name', 'Type', 'Address', 'Flags', 'Offset', 'Size', 'Link', 'Info', 'Align', 'Entry size']);
 	}
 
-	public static FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): SectionHeader {
+	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): SectionHeader {
 		return new SectionHeader(buffer, options);
 	}
 }
 
-export class Symbol implements ELFElement {
-	private constructor(private buffer: Buffer, public options: EncodeDecodeOptions) {}
-
-	private get view(): DataView {
-		return new DataView(this.buffer);
-	}
-
-	public get isLE(): boolean {
-		return this.options.isLE;
-	}
-
-	public get is32bit(): boolean {
-		return this.options.is32bit;
+export class Symbol extends ELFElement {
+	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
+		super(buffer, options);
 	}
 
 	public get name(): number {
@@ -547,34 +571,20 @@ export class Symbol implements ELFElement {
 		]);
 	}
 
-	public toBuffer(): Buffer {
-		return Buffer.from(this.buffer);
-	}
-
-	public static SH_TYPES: sh_type[] = [sh_type.SYMTAB, sh_type.DYNSYM];
+	public static override SH_TYPES = [sh_type.SYMTAB, sh_type.DYNSYM];
 
 	public static GetHTMLNameRow(): HTMLTableRowElement {
 		return arrayToTR(['Value', 'Type', 'Bind', 'Visibility', 'Size', 'Index', 'Name']);
 	}
 
-	public static FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Symbol {
+	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Symbol {
 		return new Symbol(buffer, options);
 	}
 }
 
-export class Rel implements ELFElement {
-	private constructor(private buffer: Buffer, public options: EncodeDecodeOptions, private needsAddend: boolean) {}
-
-	private get view(): DataView {
-		return new DataView(this.buffer);
-	}
-
-	public get isLE(): boolean {
-		return this.options.isLE;
-	}
-
-	public get is32bit(): boolean {
-		return this.options.is32bit;
+export class Rel extends ELFElement {
+	private constructor(buffer: Buffer, options: EncodeDecodeOptions, public needsAddend: boolean) {
+		super(buffer, options);
 	}
 
 	public get offset(): number | bigint {
@@ -612,34 +622,20 @@ export class Rel implements ELFElement {
 		return arrayToTR(['0x' + this.offset.toString(), 'ox' + this.info.toString()]);
 	}
 
-	public toBuffer(): Buffer {
-		return Buffer.from(this.buffer);
-	}
-
-	public static SH_TYPES: sh_type[] = [sh_type.REL, sh_type.RELA];
+	public static override SH_TYPES = [sh_type.REL, sh_type.RELA];
 
 	public static GetHTMLNameRow(): HTMLTableRowElement {
 		return arrayToTR(['Offset', 'Info']);
 	}
 
-	public static FromBuffer(buffer: Buffer, options: EncodeDecodeOptions, needsAddend: boolean): Rel {
+	public static override FromBuffer(buffer: Buffer, options?: EncodeDecodeOptions, needsAddend?: boolean): Rel {
 		return new Rel(buffer, options, needsAddend);
 	}
 }
 
-export class Dyn implements ELFElement {
-	private constructor(private buffer: Buffer, public options: EncodeDecodeOptions) {}
-
-	private get view(): DataView {
-		return new DataView(this.buffer);
-	}
-
-	public get isLE(): boolean {
-		return this.options.isLE;
-	}
-
-	public get is32bit(): boolean {
-		return this.options.is32bit;
+export class Dyn extends ELFElement {
+	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
+		super(buffer, options);
 	}
 
 	public get tag(): number | bigint {
@@ -678,34 +674,20 @@ export class Dyn implements ELFElement {
 		return arrayToTR(['0x' + this.tag.toString(16), d_tag[Number(this.tag)], '0x' + this.val.toString(16)]);
 	}
 
-	public toBuffer(): Buffer {
-		return Buffer.from(this.buffer);
-	}
-
-	public static SH_TYPES: sh_type[] = [sh_type.DYNAMIC];
+	public static override SH_TYPES = [sh_type.DYNAMIC];
 
 	public static GetHTMLNameRow(): HTMLTableRowElement {
 		return arrayToTR(['Tag', 'Type', 'Value']);
 	}
 
-	public static FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Dyn {
+	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Dyn {
 		return new Dyn(buffer, options);
 	}
 }
 
-export class Note implements ELFElement {
-	private constructor(private buffer: Buffer, public options: EncodeDecodeOptions) {}
-
-	private get view(): DataView {
-		return new DataView(this.buffer);
-	}
-
-	public get isLE(): boolean {
-		return this.options.isLE;
-	}
-
-	public get is32bit(): boolean {
-		return this.options.is32bit;
+export class Note extends ELFElement {
+	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
+		super(buffer, options);
 	}
 
 	public get namesz(): number | bigint {
@@ -743,57 +725,30 @@ export class Note implements ELFElement {
 		return arrayToTR([this.namesz, this.descsz]);
 	}
 
-	public toBuffer(): Buffer {
-		return Buffer.from(this.buffer);
-	}
-
-	public static SH_TYPES: sh_type[] = [sh_type.NOTE];
+	public static override SH_TYPES = [sh_type.NOTE];
 
 	public static GetHTMLNameRow(): HTMLTableRowElement {
 		return arrayToTR(['Name size', 'Desc size']);
 	}
 
-	public static FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Note {
+	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Note {
 		return new Note(buffer, options);
 	}
 }
 
-export class ELF {
+export class ELF extends ELFElement {
 	public sectionHeaders: SectionHeader[] = [];
 	public programHeaders: ProgramHeader[] = [];
-	private constructor(public buffer: Buffer, public header: ELFHeader) {}
-
-	public static FromBuffer(buffer: Buffer) {
-		const header = ELFHeader.FromBuffer(buffer);
-		const elf = new ELF(buffer, header);
-
-		const options = {
-			isLE: header.ident[e_ident.DATA] == 1,
-			is32bit: header.ident[e_ident.CLASS] == 1,
-			elf,
-		};
-
-		for (let i = Number(header.shoff); i < Number(header.shoff) + header.shnum * header.shentsize; i += header.shentsize) {
-			const shRaw = buffer.slice(i, i + header.shentsize);
-			const sh = SectionHeader.FromBuffer(shRaw, options);
-			elf.sectionHeaders.push(sh);
-		}
-
-		for (let i = 0; i < header.phnum; i++) {
-			const phRaw = buffer.slice(Number(header.phoff) + i * header.phentsize, Number(header.phoff) + (i + 1) * header.phentsize);
-			const ph = ProgramHeader.FromBuffer(phRaw, options);
-			elf.programHeaders.push(ph);
-		}
-
-		return elf;
+	private constructor(buffer: Buffer, public header: ELFHeader) {
+		super(buffer, header.options);
 	}
 
-	public getProgramHeaderValue(header: ProgramHeader): Buffer {
-		return this.buffer.slice(Number(header.offset), Number(header.offset) + Number(header.filesz));
+	public override get isLE(): boolean {
+		return this.header.isLE;
 	}
 
-	public getSectionHeaderValue(header: SectionHeader): Buffer {
-		return this.buffer.slice(Number(header.offset), Number(header.offset) + Number(header.size));
+	public override get is32bit(): boolean {
+		return this.header.is32bit;
 	}
 
 	public getSectionHeaderByName(name: string): SectionHeader {
@@ -808,7 +763,7 @@ export class ELF {
 	public getSymbols(): { sh: SectionHeader; symbols: Symbol[] }[] {
 		const result = [];
 		for (let sh of this.getSectionHeadersByType(sh_type.SYMTAB)) {
-			result.push({ sh, symbols: sh.getData(this, Symbol) });
+			result.push({ sh, symbols: sh.getData(Symbol) });
 		}
 
 		return result;
@@ -817,7 +772,7 @@ export class ELF {
 	public getDynamic(): { sh: SectionHeader; dynamic: Dyn[] }[] {
 		const result = [];
 		for (let sh of this.getSectionHeadersByType(sh_type.DYNAMIC)) {
-			result.push({ sh, dynamic: sh.getData(this, Dyn) });
+			result.push({ sh, dynamic: sh.getData(Dyn) });
 		}
 
 		return result;
@@ -917,5 +872,31 @@ export class ELF {
 		}
 
 		return container;
+	}
+
+	public static FromBuffer(bufferLike: ArrayBufferLike) {
+		const buffer = Buffer.from(bufferLike),
+		 header = ELFHeader.FromBuffer(buffer),
+		 elf = new ELF(buffer, header);
+
+		const options = {
+			isLE: header.ident[e_ident.DATA] == 1,
+			is32bit: header.ident[e_ident.CLASS] == 1,
+			elf,
+		};
+
+		for (let i = Number(header.shoff); i < Number(header.shoff) + header.shnum * header.shentsize; i+= header.shentsize) {
+			const shRaw = buffer.slice(i, i + header.shentsize);
+			const sh = SectionHeader.FromBuffer(shRaw, options);
+			elf.sectionHeaders.push(sh);
+		}
+
+		for (let i = Number(header.phoff); i < Number(header.phoff) + header.phnum * header.phentsize; i+= header.phentsize) {
+			const phRaw = buffer.slice(i, i + header.phentsize);
+			const ph = ProgramHeader.FromBuffer(phRaw, options);
+			elf.programHeaders.push(ph);
+		}
+
+		return elf;
 	}
 }
