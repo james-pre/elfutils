@@ -1,9 +1,24 @@
 import { build } from 'esbuild';
-import * as fs from 'fs';
 
-await build({
-	entryPoints: [ './src/index.js' ],
-	outfile: './dist/bundle.js',
-	preservceName: true,
+const options = {
+	entryPoints: ['src/index.ts'],
+	target: ['es6'],
+	sourcemap: true,
 	bundle: true,
+	format: 'esm',
+}
+
+console.log('Building unminified...');
+await build({
+	...options,
+	outfile: 'dist/elfutils.js',
 });
+console.log('Built unminified.');
+
+console.log('Building minified...');
+await build({
+	...options,
+	outfile: 'dist/elfutils.min.js',
+	minify: true,	
+});
+console.log('Built minified.');
