@@ -880,7 +880,6 @@ export class ELF extends ELFElement {
 		for (let i = Number(header.shoff); i < Number(header.shoff) + header.shnum * header.shentsize; i += header.shentsize) {
 			const shRaw = Buffer.from(buffer.slice(i, i + header.shentsize));
 			const sh = SectionHeader.FromBuffer(shRaw, elf);
-			console.log(`Section header #${(i - Number(header.shoff)) / header.shentsize}`, i, i + header.shentsize, shRaw);
 			elf.sectionHeaders.push(sh);
 		}
 
