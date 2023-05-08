@@ -1,4 +1,5 @@
 import { ELF } from '../index';
+export * from '../index';
 
 let files: File[] = [];
 
@@ -18,24 +19,21 @@ const std = {
 };
 
 const file_input = document.querySelector<HTMLInputElement>('#file-input');
-file_input.onchange = (evt) => {
+file_input.onchange = evt => {
 	files = Array.from(file_input.files);
 };
 
-document.querySelector<HTMLButtonElement>('#parse').onclick = async (evt) => {
+export let elf: ELF;
+document.querySelector<HTMLButtonElement>('#parse').onclick = async evt => {
 	if (!files.length) {
 		std.err = 'No file[s] selected';
 		return;
 	}
 
-	try {
-		const raw = await files[0].arrayBuffer();
-		const elf = await ELF.FromBuffer(raw);
-		const html = elf.toHTML();
+	const raw = await files[0].arrayBuffer();
+	elf = await ELF.FromBuffer(raw);
+	const html = elf.toHTML();
 
-		document.querySelector('#header').innerHTML = '';
-		document.querySelector('#header').append(html);
-	} catch (err) {
-		std.err = 'Failed to parse: ' + err.stack;
-	}
+	document.querySelector('#header').innerHTML = '';
+	document.querySelector('#header').append(html);
 };

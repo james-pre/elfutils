@@ -16,17 +16,13 @@ export interface EncodeOptions {
 export type ELFElementConstructor<T extends ELFElement> = {
 	SH_TYPES: sh_type[];
 	FromBuffer(buffer: Buffer, elf?: ELF): T;
-}
+};
 
 /**
  * Base clase for ELF elements
  */
 export abstract class ELFElement {
-
-	constructor(
-		public buffer: Buffer,
-		public elf?: ELF,
-	) {}
+	constructor(public buffer: Buffer, public elf?: ELF) {}
 
 	/**
 	 * Gets a DataView representing the current element's buffer
@@ -61,12 +57,12 @@ export abstract class ELFElement {
 
 	/**
 	 * Returns a buffer representing the current element
-	 * @param options 
+	 * @param options
 	 * @returns the encoded buffer
 	 */
 	public toBuffer(options?: EncodeOptions): Buffer {
 		return Buffer.from(this.buffer);
-	};
+	}
 
 	/**
 	 * The different section header types represented by this element type
@@ -75,7 +71,7 @@ export abstract class ELFElement {
 
 	public static FromBuffer(buffer: Buffer, elf?: ELF): ELFElement {
 		throw new ReferenceError('Cannot call FromBuffer on ELFElement directly!');
-	};
+	}
 }
 
 export class ELFHeader extends ELFElement {
@@ -340,7 +336,7 @@ export class ProgramHeader extends ELFElement {
 				File segment size: ${this.filesz} (bytes)
 				Memory segment size: ${this.memsz} (bytes)
 				Flags: ${Object.entries(p_flags)
-					.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
+					.filter(([text, num]) => (typeof num == 'number' && this.hasFlag(num) ? text : false))
 					.join(', ')}
 				Alignment: ${this.align}${this.type == p_type.INTERP ? `\n[Requesting interpreter: ${this.value.toString('utf8')}]` : ''}
 			`.replaceAll('\t', '');
@@ -355,7 +351,7 @@ export class ProgramHeader extends ELFElement {
 			this.filesz,
 			this.memsz,
 			Object.entries(p_flags)
-				.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
+				.filter(([text, num]) => (typeof num == 'number' && this.hasFlag(num) ? text : false))
 				.join(', '),
 			this.align,
 		]);
@@ -428,14 +424,15 @@ export class SectionHeader extends ELFElement {
 	}
 
 	public getData<T extends ELFElement>(elfElement: ELFElementConstructor<T>): T[] {
-		const result = [], value = this.value;
+		const result = [],
+			value = this.value;
 
 		if (!elfElement.SH_TYPES.includes(this.type)) {
 			throw new TypeError('Invalid type');
 		}
 
 		for (let i = 0; i < this.size; i += Number(this.entsize)) {
-			const entBuffer = value.slice(i, i + Number(this.entsize));
+			const entBuffer = Buffer.from(value.slice(i, i + Number(this.entsize)));
 			const ent = elfElement.FromBuffer(entBuffer, this.elf);
 			result.push(ent);
 		}
@@ -450,7 +447,7 @@ export class SectionHeader extends ELFElement {
 				Type: ${sh_type[this.type] || '0x' + this.type.toString(16)}
 				Address: 0x${this.addr.toString(16)}
 				Flags: ${Object.entries(sh_flags)
-					.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
+					.filter(([text, num]) => (typeof num == 'number' && this.hasFlag(num) ? text : false))
 					.join(', ')}
 				Offset: ${this.offset} (bytes)
 				Size: ${this.size} (bytes)
@@ -468,7 +465,7 @@ export class SectionHeader extends ELFElement {
 			`${sh_type[this.type] || '0x' + this.type.toString(16)}`,
 			`0x${this.addr.toString(16)}`,
 			Object.entries(sh_flags)
-				.filter(([text, num]) => typeof num == 'number' && this.hasFlag(num) ? text : false)
+				.filter(([text, num]) => (typeof num == 'number' && this.hasFlag(num) ? text : false))
 				.join(', '),
 			this.offset,
 			this.size,
@@ -877,18 +874,18 @@ export class ELF extends ELFElement {
 
 	public static FromBuffer(bufferLike: ArrayBufferLike) {
 		const buffer = Buffer.from(bufferLike),
-		 header = ELFHeader.FromBuffer(buffer),
-		 elf = new ELF(buffer, header);
+			header = ELFHeader.FromBuffer(buffer),
+			elf = new ELF(buffer, header);
 
-		for (let i = 0; i < header.shnum; i++) {
-			const start = Number(header.shoff) + i * header.shentsize;
-			const shRaw = buffer.slice(start, start + header.shentsize);
+		for (let i = Number(header.shoff); i < Number(header.shoff) + header.shnum * header.shentsize; i += header.shentsize) {
+			const shRaw = Buffer.from(buffer.slice(i, i + header.shentsize));
 			const sh = SectionHeader.FromBuffer(shRaw, elf);
+			console.log(`Section header #${(i - Number(header.shoff)) / header.shentsize}`, i, i + header.shentsize, shRaw);
 			elf.sectionHeaders.push(sh);
 		}
 
-		for (let i = Number(header.phoff); i < Number(header.phoff) + header.phnum * header.phentsize; i+= header.phentsize) {
-			const phRaw = buffer.slice(i, i + header.phentsize);
+		for (let i = Number(header.phoff); i < Number(header.phoff) + header.phnum * header.phentsize; i += header.phentsize) {
+			const phRaw = Buffer.from(buffer.slice(i, i + header.phentsize));
 			const ph = ProgramHeader.FromBuffer(phRaw, elf);
 			elf.programHeaders.push(ph);
 		}

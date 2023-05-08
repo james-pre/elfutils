@@ -7,6 +7,7 @@ const options = {
 	sourcemap: true,
 	bundle: true,
 	minify: true,
+	globalName: 'elfutils',
 	loader: {
 		'.html': 'copy'
 	}

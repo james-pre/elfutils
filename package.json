@@ -11,6 +11,8 @@
 	"scripts": {
 		"build": "node scripts/build.js",
 		"build:demo": "node scripts/build-demo.js",
+		"format:fix": "prettier --write src",
+		"format:check": "prettier --check src",
 		"test": "npm run build:demo"
 	},
 	"devDependencies": {

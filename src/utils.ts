@@ -9,7 +9,7 @@ export function arrayToTR(array: Array<any>): HTMLTableRowElement {
 	const row = document.createElement('tr');
 	for (let text of array) {
 		const td = document.createElement('td');
-		td.innerText = text.toString();
+		td.innerText = (text ?? '').toString();
 		row.appendChild(td);
 	}
 
