@@ -5,10 +5,9 @@ import { Buffer } from 'buffer';
 /**
  * Options for encoding/decoding ELF headers from Buffers
  */
-export interface EncodeDecodeOptions {
+export interface EncodeOptions {
 	isLE: boolean;
 	is32bit: boolean;
-	elf?: ELF;
 }
 
 /**
@@ -16,7 +15,7 @@ export interface EncodeDecodeOptions {
  */
 export type ELFElementConstructor<T extends ELFElement> = {
 	SH_TYPES: sh_type[];
-	FromBuffer(buffer: Buffer, options?: EncodeDecodeOptions): T;
+	FromBuffer(buffer: Buffer, elf?: ELF): T;
 }
 
 /**
@@ -26,28 +25,28 @@ export abstract class ELFElement {
 
 	constructor(
 		public buffer: Buffer,
-		public options?: EncodeDecodeOptions,
+		public elf?: ELF,
 	) {}
 
 	/**
 	 * Gets a DataView representing the current element's buffer
 	 */
 	protected get view(): DataView {
-		return new DataView(this.buffer);
+		return new DataView(this.buffer.buffer);
 	}
 
 	/**
 	 * Whether the current element is little endian or big endian
 	 */
 	public get isLE(): boolean {
-		return this.options.isLE;
+		return this.elf.isLE;
 	}
 
 	/**
 	 * Whether the current element is 32 bit
 	 */
 	public get is32bit(): boolean {
-		return this.options.is32bit;
+		return this.elf.is32bit;
 	}
 
 	/**
@@ -65,7 +64,7 @@ export abstract class ELFElement {
 	 * @param options 
 	 * @returns the encoded buffer
 	 */
-	public toBuffer(options?: EncodeDecodeOptions): Buffer {
+	public toBuffer(options?: EncodeOptions): Buffer {
 		return Buffer.from(this.buffer);
 	};
 
@@ -74,7 +73,7 @@ export abstract class ELFElement {
 	 */
 	public static SH_TYPES: sh_type[];
 
-	public static FromBuffer(buffer: Buffer, options?: EncodeDecodeOptions): ELFElement {
+	public static FromBuffer(buffer: Buffer, elf?: ELF): ELFElement {
 		throw new ReferenceError('Cannot call FromBuffer on ELFElement directly!');
 	};
 }
@@ -252,8 +251,8 @@ export class ELFHeader extends ELFElement {
 }
 
 export class ProgramHeader extends ELFElement {
-	public constructor(buffer: Buffer, options: EncodeDecodeOptions) {
-		super(buffer, options);
+	public constructor(buffer: Buffer, elf: ELF) {
+		super(buffer, elf);
 	}
 
 	public get type(): p_type {
@@ -289,7 +288,7 @@ export class ProgramHeader extends ELFElement {
 	}
 
 	public get value(): Buffer {
-		return this.options.elf.buffer.slice(Number(this.offset), Number(this.offset) + Number(this.filesz));
+		return this.elf.buffer.slice(Number(this.offset), Number(this.offset) + Number(this.filesz));
 	}
 
 	public set type(val: p_type) {
@@ -325,7 +324,7 @@ export class ProgramHeader extends ELFElement {
 	}
 
 	public set value(val: Buffer) {
-		val.copy(this.options.elf.buffer, Number(this.offset), 0, Number(this.filesz));
+		val.copy(this.elf.buffer, Number(this.offset), 0, Number(this.filesz));
 	}
 
 	public hasFlag(flag: number | bigint): boolean {
@@ -366,14 +365,14 @@ export class ProgramHeader extends ELFElement {
 		return arrayToTR(['Type', 'Offset', 'Virtual Address', 'Physical Address', 'File size', 'Memory size', 'Flags', 'Alignment']);
 	}
 
-	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): ProgramHeader {
-		return new ProgramHeader(buffer, options);
+	public static override FromBuffer(buffer: Buffer, elf: ELF): ProgramHeader {
+		return new ProgramHeader(buffer, elf);
 	}
 }
 
 export class SectionHeader extends ELFElement {
-	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
-		super(buffer, options);
+	private constructor(buffer: Buffer, elf: ELF) {
+		super(buffer, elf);
 	}
 
 	public get name(): number {
@@ -417,7 +416,7 @@ export class SectionHeader extends ELFElement {
 	}
 
 	public get value(): Buffer {
-		return this.options.elf.buffer.slice(Number(this.offset), Number(this.offset) + Number(this.size));
+		return this.elf.buffer.slice(Number(this.offset), Number(this.offset) + Number(this.size));
 	}
 
 	public hasFlag(flag: number | bigint): boolean {
@@ -425,7 +424,7 @@ export class SectionHeader extends ELFElement {
 	}
 
 	public getName(): string {
-		return readString(this.options.elf.sectionHeaders[this.options.elf.header.shstrndx].value, this.name);
+		return readString(this.elf.sectionHeaders[this.elf.header.shstrndx].value, this.name);
 	}
 
 	public getData<T extends ELFElement>(elfElement: ELFElementConstructor<T>): T[] {
@@ -437,7 +436,7 @@ export class SectionHeader extends ELFElement {
 
 		for (let i = 0; i < this.size; i += Number(this.entsize)) {
 			const entBuffer = value.slice(i, i + Number(this.entsize));
-			const ent = elfElement.FromBuffer(entBuffer, this.options);
+			const ent = elfElement.FromBuffer(entBuffer, this.elf);
 			result.push(ent);
 		}
 
@@ -446,7 +445,7 @@ export class SectionHeader extends ELFElement {
 
 	public toString(): string {
 		return `\
-				[${this.options.elf?.sectionHeaders?.indexOf(this)}] \
+				[${this.elf?.sectionHeaders?.indexOf(this)}] \
 				Name: ${this.getName() || `Unknown (at 0x${this.name.toString(16)})`}
 				Type: ${sh_type[this.type] || '0x' + this.type.toString(16)}
 				Address: 0x${this.addr.toString(16)}
@@ -464,7 +463,7 @@ export class SectionHeader extends ELFElement {
 
 	public toHTML(): HTMLTableRowElement {
 		return arrayToTR([
-			this.options.elf.sectionHeaders.indexOf(this),
+			this.elf.sectionHeaders.indexOf(this),
 			this.getName() || `Unknown (at 0x${this.name.toString(16)})`,
 			`${sh_type[this.type] || '0x' + this.type.toString(16)}`,
 			`0x${this.addr.toString(16)}`,
@@ -484,14 +483,14 @@ export class SectionHeader extends ELFElement {
 		return arrayToTR(['No.', 'Name', 'Type', 'Address', 'Flags', 'Offset', 'Size', 'Link', 'Info', 'Align', 'Entry size']);
 	}
 
-	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): SectionHeader {
-		return new SectionHeader(buffer, options);
+	public static override FromBuffer(buffer: Buffer, elf: ELF): SectionHeader {
+		return new SectionHeader(buffer, elf);
 	}
 }
 
 export class Symbol extends ELFElement {
-	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
-		super(buffer, options);
+	private constructor(buffer: Buffer, elf: ELF) {
+		super(buffer, elf);
 	}
 
 	public get name(): number {
@@ -543,7 +542,7 @@ export class Symbol extends ELFElement {
 	}
 
 	public toString(): string {
-		const strtab = this.options.elf && this.options.elf.getSectionHeaderByName('.strtab');
+		const strtab = this.elf && this.elf.getSectionHeaderByName('.strtab');
 		const names = strtab?.value;
 		return `\
 		Name: ${names ? readString(names, this.name) : `Unknown (at 0x${this.name.toString(16)})`}
@@ -557,7 +556,7 @@ export class Symbol extends ELFElement {
 	}
 
 	public toHTML(): HTMLTableRowElement {
-		const strtab = this.options.elf && this.options.elf.getSectionHeaderByName('.strtab');
+		const strtab = this.elf && this.elf.getSectionHeaderByName('.strtab');
 		const names = strtab?.value;
 
 		return arrayToTR([
@@ -577,14 +576,14 @@ export class Symbol extends ELFElement {
 		return arrayToTR(['Value', 'Type', 'Bind', 'Visibility', 'Size', 'Index', 'Name']);
 	}
 
-	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Symbol {
-		return new Symbol(buffer, options);
+	public static override FromBuffer(buffer: Buffer, elf: ELF): Symbol {
+		return new Symbol(buffer, elf);
 	}
 }
 
 export class Rel extends ELFElement {
-	private constructor(buffer: Buffer, options: EncodeDecodeOptions, public needsAddend: boolean) {
-		super(buffer, options);
+	private constructor(buffer: Buffer, elf: ELF, public needsAddend: boolean) {
+		super(buffer, elf);
 	}
 
 	public get offset(): number | bigint {
@@ -628,14 +627,14 @@ export class Rel extends ELFElement {
 		return arrayToTR(['Offset', 'Info']);
 	}
 
-	public static override FromBuffer(buffer: Buffer, options?: EncodeDecodeOptions, needsAddend?: boolean): Rel {
-		return new Rel(buffer, options, needsAddend);
+	public static override FromBuffer(buffer: Buffer, elf?: ELF, needsAddend?: boolean): Rel {
+		return new Rel(buffer, elf, needsAddend);
 	}
 }
 
 export class Dyn extends ELFElement {
-	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
-		super(buffer, options);
+	private constructor(buffer: Buffer, elf: ELF) {
+		super(buffer, elf);
 	}
 
 	public get tag(): number | bigint {
@@ -680,14 +679,14 @@ export class Dyn extends ELFElement {
 		return arrayToTR(['Tag', 'Type', 'Value']);
 	}
 
-	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Dyn {
-		return new Dyn(buffer, options);
+	public static override FromBuffer(buffer: Buffer, elf: ELF): Dyn {
+		return new Dyn(buffer, elf);
 	}
 }
 
 export class Note extends ELFElement {
-	private constructor(buffer: Buffer, options: EncodeDecodeOptions) {
-		super(buffer, options);
+	private constructor(buffer: Buffer, elf: ELF) {
+		super(buffer, elf);
 	}
 
 	public get namesz(): number | bigint {
@@ -731,8 +730,8 @@ export class Note extends ELFElement {
 		return arrayToTR(['Name size', 'Desc size']);
 	}
 
-	public static override FromBuffer(buffer: Buffer, options: EncodeDecodeOptions): Note {
-		return new Note(buffer, options);
+	public static override FromBuffer(buffer: Buffer, elf: ELF): Note {
+		return new Note(buffer, elf);
 	}
 }
 
@@ -740,8 +739,10 @@ export class ELF extends ELFElement {
 	public sectionHeaders: SectionHeader[] = [];
 	public programHeaders: ProgramHeader[] = [];
 	private constructor(buffer: Buffer, public header: ELFHeader) {
-		super(buffer, header.options);
+		super(buffer);
 	}
+
+	public override elf = this;
 
 	public override get isLE(): boolean {
 		return this.header.isLE;
@@ -879,21 +880,16 @@ export class ELF extends ELFElement {
 		 header = ELFHeader.FromBuffer(buffer),
 		 elf = new ELF(buffer, header);
 
-		const options = {
-			isLE: header.ident[e_ident.DATA] == 1,
-			is32bit: header.ident[e_ident.CLASS] == 1,
-			elf,
-		};
-
-		for (let i = Number(header.shoff); i < Number(header.shoff) + header.shnum * header.shentsize; i+= header.shentsize) {
-			const shRaw = buffer.slice(i, i + header.shentsize);
-			const sh = SectionHeader.FromBuffer(shRaw, options);
+		for (let i = 0; i < header.shnum; i++) {
+			const start = Number(header.shoff) + i * header.shentsize;
+			const shRaw = buffer.slice(start, start + header.shentsize);
+			const sh = SectionHeader.FromBuffer(shRaw, elf);
 			elf.sectionHeaders.push(sh);
 		}
 
 		for (let i = Number(header.phoff); i < Number(header.phoff) + header.phnum * header.phentsize; i+= header.phentsize) {
 			const phRaw = buffer.slice(i, i + header.phentsize);
-			const ph = ProgramHeader.FromBuffer(phRaw, options);
+			const ph = ProgramHeader.FromBuffer(phRaw, elf);
 			elf.programHeaders.push(ph);
 		}
 

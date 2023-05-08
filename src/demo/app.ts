@@ -30,7 +30,8 @@ document.querySelector<HTMLButtonElement>('#parse').onclick = async (evt) => {
 
 	try {
 		const raw = await files[0].arrayBuffer();
-		const html = (await ELF.FromBuffer(raw)).toHTML();
+		const elf = await ELF.FromBuffer(raw);
+		const html = elf.toHTML();
 
 		document.querySelector('#header').innerHTML = '';
 		document.querySelector('#header').append(html);

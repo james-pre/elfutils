@@ -12,7 +12,10 @@ const options = {
 	}
 }
 if(['--watch', '-w'].some(flag => process.argv.includes(flag))) {
-	const ctx = await context(options);
+	const ctx = await context({ ...options, plugins: [ { name: 'counter', setup(build){
+		let i = 1;
+		build.onStart(() => console.log('Build #' + i++))
+	} } ] });
 	await ctx.watch();
 } else {
 	await build(options);
